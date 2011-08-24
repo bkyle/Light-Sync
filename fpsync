@@ -179,9 +179,10 @@ if __name__ == "__main__":
 			print "%s [command [command arguments]]" % PROGRAM_NAME
 			print
 			print "Possible commands are:"
-			print "\thelp, --help	Shows this help message."
-			print "\tinit			Initializes a new sync folder."
-			print "\tsync			Performs a sync operation."
+			print "\thelp, --help   Shows this help message."
+			print "\tinit           Initializes a new mirror folder."
+			print "\tsync           Performs a sync operation."
+			print "\tstat           Provides the status of the files in the mirror."
 			print
 	
 	class InitCommand (Command):
@@ -241,7 +242,10 @@ if __name__ == "__main__":
 
 	PROGRAM_NAME = sys.argv[0]
 
-	commandName = sys.argv[1]
+	commandName = None
+	if (len(sys.argv) > 1):
+		commandName = sys.argv[1]
+		
 	command = HelpCommand()
 	
 	if (commandName == "init"):
