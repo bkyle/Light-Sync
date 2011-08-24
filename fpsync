@@ -1,141 +1,269 @@
 #!/usr/bin/python
 
+# TODO
+#
+# Ensure that source directory is not a parent of the target directory.
+#
+
+
+
 import os
 import os.path
 import fnmatch
+import pickle
 
 class Configuration (object):
-    _local = []
-    _excluded = []
 
-    def add_local(self, relative_path):
-        self._local.append(relative_path)
+	_source = None
+	_local = []
+	_excluded = []
 
-    def add_exclude(self, relative_path):
-        self._excluded.append(relative_path)
+	def set_source(self, source):
+		self._source = source
+
+	def add_local(self, relative_path):
+		self._local.append(relative_path)
+
+	def add_exclude(self, relative_path):
+		self._excluded.append(relative_path)
 
 
-    def is_local(self, relative_path):
-        for local in self._local:
-            if (relative_path == local or relative_path.startswith(local + "/")):
-                return True
-            return False
+	def is_local(self, relative_path):
+		for local in self._local:
+			if (relative_path == local or relative_path.startswith(local + "/")):
+				return True
+			return False
 
-    def is_excluded(self, relative_path):
-        for pattern in self._excluded:
-            if (fnmatch.fnmatch(os.path.basename(relative_path), pattern)):
-                return True
-            return False
+	def is_excluded(self, relative_path):
+		for pattern in self._excluded:
+			if (fnmatch.fnmatch(os.path.basename(relative_path), pattern)):
+				return True
+			return False
+	
+	def read(path):
+		return pickle.load(path)
+	
+	def write(self, path):
+		f = open(path, "w")
+		pickle.dump(self, f)
+		f.close()
 
 # Engine
 class Engine (object):
-    
-    _configuration = None
-    _all_files = []
+	
+	_configuration = None
+	_all_files = []
 
-    def __init__(self, configuration):
-        self._configuration = configuration
+	def __init__(self, configuration):
+		self._configuration = configuration
 
-    def _update(self, master_root, master, slave_root, slave):
-        """Walks the master directory creating symbolic links for all
-        files in the master that do not exist in the slave."""
-        
-        if (master is None):
-            master = ""
+	def _update(self, master_root, master, slave_root, slave):
+		"""Walks the master directory creating symbolic links for all
+		files in the master that do not exist in the slave."""
+		
+		if (master is None):
+			master = ""
 
-        if (slave is None):
-            slave = ""
-                
-        absolute_master = os.path.join(master_root, master)
-        absolute_slave = os.path.join(slave_root, slave)
+		if (slave is None):
+			slave = ""
+				
+		absolute_master = os.path.join(master_root, master)
+		absolute_slave = os.path.join(slave_root, slave)
 
-        if (os.path.isdir(absolute_master)):
-            
-            # If the target file doesn't exist, create it.
-            if (not os.path.exists(absolute_slave)):
-                print "mkdir \"%s\"" % absolute_slave
-        
-            # If the target file exists, but isn't a directory, remove it and make a
-            # directory in its place.
-            if (os.path.exists(absolute_slave) and not os.path.isdir(absolute_slave)):
-                print "rm \"%s\"" % absolute_slave
-                print "mkdir \"%s\"" % absolute_slave
+		if (os.path.isdir(absolute_master)):
+			
+			# If the target file doesn't exist, create it.
+			if (not os.path.exists(absolute_slave)):
+				print "mkdir \"%s\"" % absolute_slave
+		
+			# If the target file exists, but isn't a directory, remove it and make a
+			# directory in its place.
+			if (os.path.exists(absolute_slave) and not os.path.isdir(absolute_slave)):
+				print "rm \"%s\"" % absolute_slave
+				print "mkdir \"%s\"" % absolute_slave
 
-            # Recurseively copy the contents of the master directory over to the target.
-            names = os.listdir(absolute_master)
-            for name in names:
-                self._update(master_root, os.path.join(master, name), slave_root, os.path.join(slave, name))
+			# Recurseively copy the contents of the master directory over to the target.
+			names = os.listdir(absolute_master)
+			for name in names:
+				self._update(master_root, os.path.join(master, name), slave_root, os.path.join(slave, name))
 
-        else:
+		else:
 
-            self._all_files.append({ "path": master, "last_modified": os.path.getmtime(absolute_master)})
+			self._all_files.append({ "path": master, "last_modified": os.path.getmtime(absolute_master)})
 
-            # If the target file doesn't exist, link it over.
-            if (not os.path.exists(absolute_slave) and not self._configuration.is_excluded(absolute_master)):
-                if (self._configuration.is_local(master)):
-                    print "cp \"%s\" \"%s\"" %(absolute_master, absolute_slave)
-                else:
-                    print "ln -s \"%s\" \"%s\"" % (absolute_master, absolute_slave)
-        
-            # If the target file exists and it's a directory, remove it and
-            # link the new file over.
-            if (os.path.exists(absolute_slave)):
+			# If the target file doesn't exist, link it over.
+			if (not os.path.exists(absolute_slave) and not self._configuration.is_excluded(absolute_master)):
+				if (self._configuration.is_local(master)):
+					print "cp \"%s\" \"%s\"" %(absolute_master, absolute_slave)
+				else:
+					print "ln -s \"%s\" \"%s\"" % (absolute_master, absolute_slave)
+		
+			# If the target file exists and it's a directory, remove it and
+			# link the new file over.
+			if (os.path.exists(absolute_slave)):
 
-                if (os.path.isdir(absolute_slave)):
-                    print "rm -rf \"%s\"" % absolute_slave
-                    if (not self._configuration.is_excluded(master)):
-                        if (self._configuration.is_local(master)):
-                            print "cp \"%s\" \"%s\"" % (absolute_master, absolute_slave)
-                        else:
-                            print "ln -s \"%s\" \"%s\"" % (absolute_master, absolute_slave)
-                            
-                    elif (self._configuration.is_local(master) and os.path.islink(absolute_slave)):
-                        print "rm -f \"%s\"" % absolute_master
-                        print "cp \"%s\" \"%s\"" % (absolute_master, absolute_slave)
-                        
-                    elif (not self._configuration.is_local(master) and not os.path.islink(absolute_slave)):
-                        print "rm -f \"%s\"" % absolute_master
-                        print "ln -s \"%s\" \"%s\"" % (absolute_master, absolute_slave)
-
-
-    def _generate_latest_folder(self, master_root, slave_root):
-
-        latest = os.path.join(slave_root, "Latest")
-
-        if (not os.path.exists(latest)):
-            print "mkdir \"%s\"" % latest
-        
-        if (os.path.exists(latest) and not os.path.isdir(latest)):
-            print "rm -f \"%s\"" % latest
-            print "mkdir \"%s\"" % latest
-
-        sorted_files = sorted(self._all_files, key=lambda file: file.get("last_modified"))
-        for i in range(9):
-            path = sorted_files[i].get("path")
-            print "ln -s \"%s\" \"%s\"" % (os.path.join(master_root, path), os.path.join(latest, path))
+				if (os.path.isdir(absolute_slave)):
+					print "rm -rf \"%s\"" % absolute_slave
+					if (not self._configuration.is_excluded(master)):
+						if (self._configuration.is_local(master)):
+							print "cp \"%s\" \"%s\"" % (absolute_master, absolute_slave)
+						else:
+							print "ln -s \"%s\" \"%s\"" % (absolute_master, absolute_slave)
+							
+					elif (self._configuration.is_local(master) and os.path.islink(absolute_slave)):
+						print "rm -f \"%s\"" % absolute_master
+						print "cp \"%s\" \"%s\"" % (absolute_master, absolute_slave)
+						
+					elif (not self._configuration.is_local(master) and not os.path.islink(absolute_slave)):
+						print "rm -f \"%s\"" % absolute_master
+						print "ln -s \"%s\" \"%s\"" % (absolute_master, absolute_slave)
 
 
-    def update(self, master, slave):
-        self._all_files = []
-        self._update(master, "", slave, "")
+	def _generate_latest_folder(self, master_root, slave_root):
 
-        self._generate_latest_folder(master, slave)
+		latest = os.path.join(slave_root, "Latest")
 
+		if (not os.path.exists(latest)):
+			print "mkdir \"%s\"" % latest
+		
+		if (os.path.exists(latest) and not os.path.isdir(latest)):
+			print "rm -f \"%s\"" % latest
+			print "mkdir \"%s\"" % latest
+
+		sorted_files = sorted(self._all_files, key=lambda file: file.get("last_modified"))
+		for i in range(9):
+			path = sorted_files[i].get("path")
+			print "ln -s \"%s\" \"%s\"" % (os.path.join(master_root, path), os.path.join(latest, path))
+
+
+	def update(self, master, slave):
+		self._all_files = []
+		self._update(master, "", slave, "")
+
+		self._generate_latest_folder(master, slave)
 
 if __name__ == "__main__":
 
-    import sys
+	import optparse
 
-    if (len(sys.argv) < 3):
-        print "%s source_directory target_directory" % sys.argv[0]
-        sys.exit(1)
+	class Command:
+		"""General base class for all commands."""
+		
+		def run(self, arguments):
+			"""Runs the command, performing any work that's required.  Once execution
+			has been handed off of a Command's run method, execution is not expected
+			to return back to the caller unless the command succeeds successfully.
+			Therefore, if an error occurs it's up to the implementation to log the
+			error to the console and invoke sys.exit to notify the OS of the failure
+			code.
+			
+			The passed arguments array contains all of the parameters after the command
+			on the command line.  This differs from sys.argv in that sys.argv will contain
+			not only the name of the program being run, but also the name of the command.
+			For example, if the user enters "fpsync sync foo" sys.argv will contain
+			['fpsync', 'sync', 'foo'] while arguments will contain ['foo'].
+			"""
+			pass
+			
+		def help(self):
+			"""Displays the help associated with the command."""
+			pass
+
+	class HelpCommand (Command):
+		"""Generic help command.  Displays high level help about the program."""
+		def help(self):
+			self.run(None)
+	
+		def run(self, arguments):
+			PROGRAM_NAME = sys.argv[0]
+			print "%s [command [command arguments]]" % PROGRAM_NAME
+			print
+			print "Possible commands are:"
+			print "\thelp, --help	Shows this help message."
+			print "\tinit			Initializes a new sync folder."
+			print "\tsync			Performs a sync operation."
+			print
+	
+	class InitCommand (Command):
+		
+		def run(self, arguments):
+		
+		 	parser = optparse.OptionParser()
+		 	parser.add_option("-v", "--verbose", dest="verbose", default=False)
+		
+			(options, args) = parser.parse_args(arguments)
+
+			if (len(args) == 0):
+				self.help()
+				sys.exit(1)
 
 
-    config = Configuration()
+			source = None
+			target = None
 
-    master = sys.argv[1]
-    slave = sys.argv[2]
+			if (len(args) > 0):
+				source = args[0]
 
-    engine = Engine(config)
-    engine.update(master, slave)
-    
+			if (source is None):
+				self.help()
+				sys.exit(1)
+				
+			if (len(args) > 1):
+				target = args[1]
+				
+			if (target is None):
+				target = os.path.basename(source)
+
+			if (os.path.exists(target)):
+				print "Directory already exists at path %s" % target
+				sys.exit(1)
+
+			os.makedirs(target)
+
+			config = Configuration()
+			config.set_source(source)
+			config.write(os.path.join(target, '.lmconfig'))
+			
+		def help(self):
+			PROGRAM_NAME = sys.argv[0]
+			print("%s init source [target]" % PROGRAM_NAME)
+			
+	class SyncCommand (Command):
+
+		def run(self, arguments):
+			pass
+			
+		def help(self):
+			pass
+
+
+	import sys
+
+	PROGRAM_NAME = sys.argv[0]
+
+	commandName = sys.argv[1]
+	command = HelpCommand()
+	
+	if (commandName == "init"):
+		command = InitCommand()
+	elif (commandName == "sync"):
+		command = SyncCommand()
+
+	arguments = sys.argv[2:]
+	command.run(arguments)
+	sys.exit(0)
+
+
+	if (len(sys.argv) < 3):
+		print "%s source_directory					 # creates a new folder with the last path component of source and syncs the source to that folder." % PROGRAM_NAME
+		print "%s source_directory target_directory	 # syncs source to the target folder, creating the target if needed." % PROGRAM_NAME
+		sys.exit(1)
+
+	config = Configuration()
+
+	master = sys.argv[1]
+	slave = sys.argv[2]
+
+	engine = Engine(config)
+	engine.update(master, slave)
+	
